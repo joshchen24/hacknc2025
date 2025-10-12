@@ -1,4 +1,5 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
+import { useRouter } from "next/router";
 import Header from "@/components/Header";
 import ControlPanel from "@/components/ControlPanel";
 import SequencerGrid from "@/components/SequencerGrid";
@@ -6,6 +7,7 @@ import SaveModal from "@/components/SaveModal";
 import { useToneSequencer } from "@/hooks/useToneSequencer";
 import { useProjectManager } from "@/hooks/useProjectManager";
 import { exportToMidi } from "../../utils/midiExport";
+import { getProject } from "../../utils/projects";
 
 const MIN_STEPS = 16; // Minimum 4 groups of 4
 const MAX_STEPS = 128; // Maximum 32 groups of 4
@@ -45,7 +47,10 @@ const INSTRUMENTS = [
 ];
 
 export default function Home() {
+  const router = useRouter();
   const [steps, setSteps] = useState(64); // Start with 16 groups of 4
+  const [loadedProjectId, setLoadedProjectId] = useState<string | null>(null);
+  const [loadedProjectName, setLoadedProjectName] = useState<string>("Untitled Project");
 
   // Initialize 3D grid: [instrumentIndex][pitchIndex][stepIndex]
   const [grid, setGrid] = useState<boolean[][][]>(() =>
@@ -67,7 +72,7 @@ export default function Home() {
 
   const [bpm, setBpm] = useState(120);
   const [bpmInput, setBpmInput] = useState("120");
-  
+
   // Volume state for each instrument (0-100)
   const [volumes, setVolumes] = useState<number[]>([70, 80, 70]); // Square, Triangle, Pulse
 
@@ -91,7 +96,59 @@ export default function Home() {
     confirmSave,
     cancelSave,
     setSaveModalName,
-  } = useProjectManager(grid, durationGrid, bpm);
+    setCurrentProjectId,
+    setProjectName,
+  } = useProjectManager(grid, durationGrid, bpm, loadedProjectId, loadedProjectName);
+
+  // Load project from URL if projectId query parameter is present
+  useEffect(() => {
+    const loadProjectFromUrl = async () => {
+      const { projectId } = router.query;
+
+      // Only load if we have a projectId and haven't loaded this project yet
+      if (projectId && typeof projectId === 'string' && projectId !== loadedProjectId) {
+        try {
+          const project = await getProject(projectId);
+
+          if (project) {
+            // Load grid data
+            if (project.grid_data) {
+              setGrid(project.grid_data);
+            }
+
+            // Load duration data
+            if (project.duration_data) {
+              setDurationGrid(project.duration_data);
+            }
+
+            // Load BPM
+            if (project.bpm) {
+              setBpm(project.bpm);
+              setBpmInput(project.bpm.toString());
+            }
+
+            // Update steps based on loaded grid
+            if (project.grid_data && project.grid_data[0] && project.grid_data[0][0]) {
+              setSteps(project.grid_data[0][0].length);
+            }
+
+            // Set project info
+            setLoadedProjectId(project.id);
+            setLoadedProjectName(project.name);
+            setCurrentProjectId(project.id);
+            setProjectName(project.name);
+          }
+        } catch (error) {
+          console.error('Error loading project:', error);
+          alert('Failed to load project');
+        }
+      }
+    };
+
+    if (router.isReady) {
+      loadProjectFromUrl();
+    }
+  }, [router.isReady, router.query, loadedProjectId, setCurrentProjectId, setProjectName]);
 
   const handleVolumeChange = useCallback((instrumentIndex: number, newVolume: number) => {
     setVolumes(prevVolumes => {

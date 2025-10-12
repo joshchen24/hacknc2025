@@ -2,10 +2,16 @@ import { useState, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import { createProject, updateProject, getProject } from '../../utils/projects';
 
-export function useProjectManager(grid: boolean[][][], durationGrid: number[][][], bpm: number) {
+export function useProjectManager(
+  grid: boolean[][][],
+  durationGrid: number[][][],
+  bpm: number,
+  initialProjectId?: string | null,
+  initialProjectName?: string
+) {
   const router = useRouter();
-  const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
-  const [projectName, setProjectName] = useState<string>("Untitled Project");
+  const [currentProjectId, setCurrentProjectId] = useState<string | null>(initialProjectId || null);
+  const [projectName, setProjectName] = useState<string>(initialProjectName || "Untitled Project");
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [saveModalName, setSaveModalName] = useState("");
   const [isSaveAs, setIsSaveAs] = useState(false);
@@ -89,6 +95,8 @@ export function useProjectManager(grid: boolean[][][], durationGrid: number[][][
     confirmSave,
     cancelSave,
     setSaveModalName,
+    setCurrentProjectId,
+    setProjectName,
   };
 }
 
