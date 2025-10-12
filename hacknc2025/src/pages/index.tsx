@@ -11,6 +11,7 @@ import { useProjectManager } from "@/hooks/useProjectManager";
 
 import { exportToMidi } from "../../utils/midiExport";
 import { getProject } from "../../utils/projects";
+import { fetchSuggestions } from "@/lib/suggest";
 
 // --------------------
 // Config
@@ -278,6 +279,67 @@ export default function Home() {
   }, [steps]);
 
   // --------------------
+  // Suggestion: flatten grid -> call API -> apply matrix back
+  // --------------------
+  const [isSuggesting, setIsSuggesting] = useState(false);
+
+  const handleSuggest = useCallback(async () => {
+    try {
+      setIsSuggesting(true);
+
+      // Flatten 3D grid (instrument -> pitch -> steps) into 2D rows x steps
+      const rows: boolean[][] = [];
+      const rowIndexMap: Array<{ instrumentIdx: number; pitchIdx: number }> = [];
+      for (let i = 0; i < INSTRUMENTS.length; i++) {
+        const inst = grid[i];
+        for (let p = 0; p < inst.length; p++) {
+          // ensure row length equals current steps
+          rows.push(inst[p].slice(0, steps));
+          rowIndexMap.push({ instrumentIdx: i, pitchIdx: p });
+        }
+      }
+
+      const suggestions = await fetchSuggestions(rows);
+
+      // Basic shape validation
+      if (!Array.isArray(suggestions) || suggestions.length !== rows.length) {
+        alert("Suggestion response shape mismatch (rows).");
+        return;
+      }
+      for (let r = 0; r < suggestions.length; r++) {
+        if (!Array.isArray(suggestions[r]) || suggestions[r].length !== steps) {
+          alert("Suggestion response shape mismatch (steps).");
+          return;
+        }
+      }
+
+      // Apply back into grid and reset durations to 1 for heads (MVP)
+      setGrid(prev => {
+        const g = prev.map(inst => inst.map(row => row.slice()));
+        setDurationGrid(prevDur => {
+          const d = prevDur.map(inst => inst.map(row => row.slice()));
+          for (let r = 0; r < suggestions.length; r++) {
+            const { instrumentIdx, pitchIdx } = rowIndexMap[r];
+            for (let s = 0; s < steps; s++) {
+              const head = Boolean(suggestions[r][s]);
+              g[instrumentIdx][pitchIdx][s] = head;
+              if (head) d[instrumentIdx][pitchIdx][s] = 1;
+            }
+          }
+          setDurationGrid(d);
+          return d;
+        });
+        return g;
+      });
+    } catch (e) {
+      console.error("Suggest failed:", e);
+      alert("Suggestion failed. See console.");
+    } finally {
+      setIsSuggesting(false);
+    }
+  }, [grid, steps]);
+
+  // --------------------
   // RAG compose: calls /api/gemini-compose-mdb and writes directly into grid
   // --------------------
   const ragCompose = useCallback(async () => {
@@ -411,6 +473,14 @@ export default function Home() {
             title="RAG: Compose across all instruments"
           >
             Compose (RAG)
+          </button>
+          <button
+            onClick={handleSuggest}
+            disabled={isPlaying || isLoading || isSuggesting}
+            className="px-4 py-2 font-bold bg-emerald-400 hover:bg-emerald-500 text-black border-4 border-emerald-700 shadow-[4px_4px_0_rgba(0,120,60,1)] disabled:opacity-50"
+            title="Get ML suggestions and apply to grid"
+          >
+            {isSuggesting ? "Suggesting..." : "Give suggestion"}
           </button>
         </div>
       </div>
